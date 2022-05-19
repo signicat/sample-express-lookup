@@ -138,6 +138,7 @@ namespace Server
             var request = new RestRequest(Method.POST);
             request.AddHeader("cache-control", "no-cache");
             request.AddHeader("content-type", "application/x-www-form-urlencoded");
+            
             // Client id and secret
             request.AddParameter("application/x-www-form-urlencoded", "grant_type=client_credentials&client_id=t184d407d352b4a1b9df643acff34cfab&client_secret=0KFHH9PZGitIIELlFYIcquCkGWTTRBVw", ParameterType.RequestBody);
             IRestResponse response = client.Execute(request);
@@ -157,9 +158,6 @@ namespace Server
             JObject ninresp = JObject.Parse(ninresponse.Content);
             var nin = ninresp["identity"]["nin"];
 
-            // In test we need a different test-user and for lookup we will be using a different NIN
-            nin = "29822099635";
-            
             // Basic lookup search
             var lookupClient = new RestClient("https://api.signicat.io/information/countries/NO/persons/?identityNumber=" + nin );
             var lookupRequest = new RestRequest(Method.GET);
