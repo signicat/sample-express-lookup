@@ -1,4 +1,4 @@
-# REST API Sample for ASP.NET Core and React
+# Lookup Registry Code Sample for ASP.NET Core and React
 
 Sample application using the [Express Authentication API](https://developer.signicat.com/express/apis/authentication.html) and the [Express Registry Lookup API](https://developer.signicat.com/express/docs/lookups/)
 
