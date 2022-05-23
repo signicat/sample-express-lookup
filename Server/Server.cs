@@ -9,10 +9,11 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Configuration;
 using System.Threading.Tasks;
 using Signicat.Express;
-using Signicat.Express.IdentificationV2;
 using RestSharp;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
+using IdentityModel;
+using IdentityModel.Client;
 
 namespace Server
 {
@@ -41,12 +42,18 @@ namespace Server
         public void ConfigureServices(IServiceCollection services)
         {
             services.AddMvc().AddNewtonsoftJson();
+            
+            // todo: trying a better way of handling access tokens, but dont know where to go from here...
+            services.AddAccessTokenManagement(options =>
+            {
+                options.Client.Clients.Add("identityserver", new ClientCredentialsTokenRequest
+                {
+                    Address = "https://api.signicat.io/oauth/connect/token",
+                    ClientId = "t184d407d352b4a1b9df643acff34cfab",
+                    ClientSecret = "0KFHH9PZGitIIELlFYIcquCkGWTTRBVw"
+                });
+            }).ConfigureBackchannelHttpClient();
 
-            services.AddSingleton<IIdentificationV2Service>(c => new IdentificationV2Service(
-                Configuration["Signicat:ClientId"],
-                Configuration["Signicat:ClientSecret"],
-                new List<OAuthScope>() { OAuthScope.Identify }
-            ));
         }
 
         public void Configure(IApplicationBuilder app, IWebHostEnvironment env)
@@ -67,15 +74,18 @@ namespace Server
     [ApiController]
     public class AuthenticationApiController : Controller
     {
-        private readonly IIdentificationV2Service _identificationService;
+        
         private readonly string _frontendAppUrl;
         private readonly string _backendUrl;
+        private readonly string _clientId;
+        private readonly string _clientSecret;
 
-        public AuthenticationApiController(IIdentificationV2Service identificationService, IConfiguration configuration)
+        public AuthenticationApiController(IConfiguration configuration)
         {
-            _identificationService = identificationService;
             _frontendAppUrl = configuration["FrontendAppUrl"];
             _backendUrl = configuration["BackendUrl"];
+            _clientId = configuration["Signicat:ClientId"];
+            _clientSecret = configuration["Signicat:ClientSecret"];
         }
 
         [HttpPost]
@@ -87,7 +97,7 @@ namespace Server
             request.AddHeader("cache-control", "no-cache");
             request.AddHeader("content-type", "application/x-www-form-urlencoded");
             // Client id and secret
-            request.AddParameter("application/x-www-form-urlencoded", "grant_type=client_credentials&client_id=t184d407d352b4a1b9df643acff34cfab&client_secret=0KFHH9PZGitIIELlFYIcquCkGWTTRBVw", ParameterType.RequestBody);
+            request.AddParameter("application/x-www-form-urlencoded", "grant_type=client_credentials&client_id="+ _clientId +"&client_secret=" + _clientSecret, ParameterType.RequestBody);
 
             IRestResponse response = client.Execute(request);
 
