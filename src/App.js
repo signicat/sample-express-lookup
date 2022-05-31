@@ -31,7 +31,8 @@ const Message = ({message}) => (
         <p>Address: {message.personStreet}, {message.personPostalCode} {message.personCity}, {message.personCountry} </p> 
         <p>Source of information: {message.lookupSource} </p> 
       </Fragment>
-      : <p>The sign in process was aborted or has an error."</p>}
+      : <p>The sign in process was aborted or has an error. <br></br> 
+            Please check if you are using a National identity number registered <br></br>as a test number in the registry lookup. </p>}
   </section>
 );
 

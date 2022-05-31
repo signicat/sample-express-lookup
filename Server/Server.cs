@@ -1,5 +1,4 @@
 ﻿using System;
-using System.Collections.Generic;
 using Microsoft.AspNetCore;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -8,12 +7,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Configuration;
 using System.Threading.Tasks;
-using Signicat.Express;
 using RestSharp;
-using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
-using IdentityModel;
-using IdentityModel.Client;
 
 namespace Server
 {
@@ -42,18 +37,6 @@ namespace Server
         public void ConfigureServices(IServiceCollection services)
         {
             services.AddMvc().AddNewtonsoftJson();
-            
-            // todo: trying a better way of handling access tokens, but dont know where to go from here...
-            services.AddAccessTokenManagement(options =>
-            {
-                options.Client.Clients.Add("identityserver", new ClientCredentialsTokenRequest
-                {
-                    Address = "https://api.signicat.io/oauth/connect/token",
-                    ClientId = "t184d407d352b4a1b9df643acff34cfab",
-                    ClientSecret = "0KFHH9PZGitIIELlFYIcquCkGWTTRBVw"
-                });
-            }).ConfigureBackchannelHttpClient();
-
         }
 
         public void Configure(IApplicationBuilder app, IWebHostEnvironment env)
@@ -74,7 +57,6 @@ namespace Server
     [ApiController]
     public class AuthenticationApiController : Controller
     {
-        
         private readonly string _frontendAppUrl;
         private readonly string _backendUrl;
         private readonly string _clientId;
@@ -91,22 +73,11 @@ namespace Server
         [HttpPost]
         public async Task<ActionResult> Create()
         {
-            // Get token
-            var client = new RestClient("https://api.signicat.io/oauth/connect/token");
-            var request = new RestRequest(Method.POST);
-            request.AddHeader("cache-control", "no-cache");
-            request.AddHeader("content-type", "application/x-www-form-urlencoded");
-            // Client id and secret
-            request.AddParameter("application/x-www-form-urlencoded", "grant_type=client_credentials&client_id="+ _clientId +"&client_secret=" + _clientSecret, ParameterType.RequestBody);
+            // Get Access Token
+            string token = new Authentication().GetToken(_clientId, _clientSecret);
 
-            IRestResponse response = client.Execute(request);
-
-            // Extract access token from response
-            dynamic resp = JObject.Parse(response.Content);
-            string token = resp.access_token;
-
-            //Make authentication call:
-            var authclient = new RestClient("https://api.signicat.io/identification/v2/sessions");
+            // Create an authentication session
+            var authClient = new RestClient("https://api.signicat.io/identification/v2/sessions");
             var authRequest = new RestRequest(Method.POST);
             authRequest.AddHeader("Authorization", "Bearer " + token);
             authRequest.AddHeader("Content-Type", "application/json");
@@ -122,19 +93,21 @@ namespace Server
                 @"    ""nin""" + "\n" +
                 @"  ]," + "\n" +
                 @"  ""redirectSettings"": {" + "\n" +
-                @"    ""successUrl"": ""http://localhost:4242/authentication-session""," + "\n" +
+                @"    ""successUrl"":  """ +  _backendUrl + @"authentication-session""," + "\n" +
                 @"    ""abortUrl"": ""https://developer.signicat.io/landing-pages/something-wrong.html""," + "\n" +
                 @"    ""errorUrl"": ""https://developer.signicat.io/landing-pages/something-wrong.html""" + "\n" +
                 @"  }" + "\n" +
                 @"}";
+            
+           
             authRequest.AddParameter("application/json", body, ParameterType.RequestBody);
 
             // Execute the request
-            IRestResponse authresponse = await authclient.ExecuteAsync(authRequest);
+            IRestResponse authResponse = await authClient.ExecuteAsync(authRequest);
 
             // Open the returned URL
-            dynamic authresp = JObject.Parse(authresponse.Content);
-            string url = authresp.url;
+            dynamic response = JObject.Parse(authResponse.Content);
+            string url = response.url;
 
             Response.Headers.Add("Location", url);
             return new StatusCodeResult(303);
@@ -143,40 +116,33 @@ namespace Server
         [HttpGet]
         public async Task<ActionResult> Retrieve([FromQuery(Name = "sessionId")] string sessionId)
         {
-            // get access token 
-            var client = new RestClient("https://api.signicat.io/oauth/connect/token");
-            var request = new RestRequest(Method.POST);
-            request.AddHeader("cache-control", "no-cache");
-            request.AddHeader("content-type", "application/x-www-form-urlencoded");
+            // Get Access Token
+            string token = new Authentication().GetToken(_clientId, _clientSecret);
+
+            // Get nin (national identity number) using the session id
+            var ninClient = new RestClient("https://api.signicat.io/identification/v2/sessions/" + sessionId);
+            var ninRequest = new RestRequest(Method.GET);
+            ninRequest.AddHeader("Authorization", "Bearer " + token);
+            IRestResponse ninResponse = ninClient.Execute(ninRequest);
             
-            // Client id and secret
-            request.AddParameter("application/x-www-form-urlencoded", "grant_type=client_credentials&client_id=t184d407d352b4a1b9df643acff34cfab&client_secret=0KFHH9PZGitIIELlFYIcquCkGWTTRBVw", ParameterType.RequestBody);
-            IRestResponse response = client.Execute(request);
+            JObject response = JObject.Parse(ninResponse.Content);
+            var nin = response["identity"]["nin"];
 
-            // Extract access token from response
-            dynamic resp = JObject.Parse(response.Content);
-            string token = resp.access_token;
-
-            // get nin from session id
-            var ninclient = new RestClient("https://api.signicat.io/identification/v2/sessions/" + sessionId);
-            var ninrequest = new RestRequest(Method.GET);
-            ninrequest.AddHeader("Authorization", "Bearer " + token);
-            var body = @"";
-            ninrequest.AddParameter("text/plain", body, ParameterType.RequestBody);
-            IRestResponse ninresponse = ninclient.Execute(ninrequest);
-            
-            JObject ninresp = JObject.Parse(ninresponse.Content);
-            var nin = ninresp["identity"]["nin"];
-
-            // Basic lookup search
+            // Registry lookup with the nin
             var lookupClient = new RestClient("https://api.signicat.io/information/countries/NO/persons/?identityNumber=" + nin );
             var lookupRequest = new RestRequest(Method.GET);
             lookupRequest.AddHeader("Authorization", "Bearer " + token);
             IRestResponse lookupResponse = lookupClient.Execute(lookupRequest);
             
-            JObject personInfo = JObject.Parse(lookupResponse.Content);
-            Console.WriteLine(personInfo);
+            // Check if lookup response is successful
+            if (!lookupResponse.IsSuccessful)
+            {
+                Response.Headers.Add("Location", _frontendAppUrl + "?error=true");
+                return new StatusCodeResult(303);
+            }
             
+            JObject personInfo = JObject.Parse(lookupResponse.Content);
+
             string personFirstName = (string)personInfo["names"][0]["first"];
             string personLastName = (string)personInfo["names"][0]["last"];
             string personMiddleName = string.IsNullOrEmpty((string)personInfo["names"][0]["middle"]) ? " " : (string)personInfo["names"][0]["middle"];
